@@ -1,9 +1,36 @@
 from flask import Flask, render_template, request, redirect, session, flash, url_for
 import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
+import boto3
+import uuid
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key_here'
+app.secret_key = '9a4f90b2b6df594f2e16f6c1f3d9e0ab0cd431c0f0176a2544e740c94cb75a0e'
+
+# ----------------------------
+# AWS SNS Configuration
+# ----------------------------
+sns = boto3.client('sns', 'us-east-1')  # e.g., 'ap-south-1'
+sns_topic_arn = 'arn:aws:sns:us-east-1:888577042471:MovieTicketNotifications  # Replace with actual ARN'
+
+def send_booking_email(email, movie, date, time, theatre, seat, booking_id):
+    message = f"""
+    🎟️ Booking Confirmed!
+
+    Movie: {movie}
+    Date: {date}
+    Time: {time}
+    Theatre: {theatre}
+    Seat(s): {seat}
+    Booking ID: {booking_id}
+
+    Thank you for booking with Movie Magic!
+    """
+    sns.publish(
+        TopicArn=sns_topic_arn,
+        Message=message,
+        Subject='Your Movie Ticket Booking Confirmation'
+    )
 
 # ----------------------------
 # DATABASE SETUP
@@ -168,10 +195,26 @@ def final_ticket():
     required = ['movie', 'date', 'time', 'theatre', 'count', 'seats', 'price', 'email', 'mobile', 'payment']
     if not all(k in args for k in required):
         return redirect('/payment')
-    return render_template('finalticket.html', **args)
+    
+    booking_id = str(uuid.uuid4())
+    try:
+        send_booking_email(
+            email=args['email'],
+            movie=args['movie'],
+            date=args['date'],
+            time=args['time'],
+            theatre=args['theatre'],
+            seat=args['seats'],
+            booking_id=booking_id
+        )
+        flash("Booking confirmed! Email sent.", "success")
+    except Exception as e:
+        flash(f"Booking confirmed but email failed: {str(e)}", "warning")
+
+    return render_template('finalticket.html', **args, booking_id=booking_id)
 
 # ----------------------------
-# RUN APP
+# APP ENTRY POINT (with new port)
 # ----------------------------
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5050, debug=True)
